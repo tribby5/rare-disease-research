@@ -1,5 +1,5 @@
 # rare-disease-research
-The repository represents the outcome of Duke University's Data+ Summer Research Program's project entitled: "Quantifying the Burden of Rare Diseases in the Duke Health System"
+The repository represents the outcome of Duke University's Data+ Summer Research Program's project entitled: "Quantifying the Burden of Rare Diseases in the Duke Health System". The work on this project is done entirely in R. 
 
 # Participants and the Program
 The faculty client of this project was Rachel Richesson MS, PhD, MPH, FACMI from the Duke School of Nursing. The project manager was Isaac Lavine, current PhD Student at Duke University. The student researchers were Gary Koplik, current graduate student at Duke, and Matthew Tribby, currently an undergraduate majoring in computer science at Duke.
