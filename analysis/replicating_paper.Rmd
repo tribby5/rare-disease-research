@@ -1,0 +1,227 @@
+---
+title: "Replicating Fung et al (2014)"
+author: "Gary Koplik, Isaac Lavine, Matthew Tribby"
+date: "May 25, 2017"
+output: html_document
+---
+
+```{r setup, include = F}
+knitr::opts_chunk$set(echo = F, message = F, warning = F)
+```
+
+## Table 1
+
+```{r}
+# load libraries
+library(dplyr)
+library(knitr)
+library(stringr)
+library(rmarkdown)
+
+# should just be able to match on the numbers
+snomed <- read.table("../data/ORDR_SNOMED_FULL.txt", sep = "\t", quote = "",
+                     stringsAsFactors = F)
+icd9 <- read.table("../data/ORDR_ICD9_FULL.txt", sep = "\t", quote = "",
+                   stringsAsFactors = F)
+icd10 <- read.table("../data/ORDR_ICD10_FULL.txt", sep = "\t", quote = "",
+                    stringsAsFactors = F)
+diseases <- read.table("../data/ORDR_FULL_LIST.txt", sep = "\t", quote = "",
+                       stringsAsFactors = F)
+
+# looking at text files by hand
+#   issue reading in first row; should be 1 at [1, 1]
+
+snomed[1, 1] = "1"
+icd9[1, 1] = "1"
+icd10[1, 1] = "1"
+diseases[1, 1] = "1"
+
+# get the unique diseases from each group
+snomed_list <- unique(snomed$V1)
+icd9_list <- unique(icd9$V1)
+icd10_list <- unique(icd10$V1)
+diseases_list <- unique(diseases$V1)
+
+# find out overlap
+prop_snomed_matches <- length(intersect(snomed_list, diseases_list)) /
+                        length(diseases_list)
+prop_icd9_matches <- length(intersect(icd9_list, diseases_list)) /
+                        length(diseases_list)
+prop_icd10_matches <- length(intersect(icd10_list, diseases_list)) /
+                        length(diseases_list)
+
+# check to see if types classifying the same diseases
+overall_intersect <- length(intersect(intersect(snomed_list, icd10_list),
+                                      icd9_list)) /
+                        length(diseases_list)
+
+icd9_snomed_intersect <- length(intersect(snomed_list, icd9_list)) /
+                          length(diseases_list)
+
+icd10_snomed_intersect <- length(intersect(snomed_list, icd10_list)) /
+  length(diseases_list)
+
+# => icd9 and icd10 are essentially subsets of snomed
+```
+
+```{r}
+
+# making Table 1 from the Richesson paper
+matches <- data.frame(100 * 
+                        c(prop_icd9_matches, prop_icd10_matches,
+                          prop_snomed_matches)
+)
+
+rownames(matches) <- c("ICD-9-CM", "ICD-10-CM", "SNOMED CT")
+
+colnames(matches) <- c("Percent Matched")
+
+kable(matches, digits = 2,)
+
+```
+
+## Table 2
+
+```{r, cache = T}
+
+snomed <- read.table("../data/ORDR_SNOMED_FULL.txt", sep = "\t", quote = "")
+icd9 <- read.table("../data/ORDR_ICD9_FULL.txt", sep = "\t", quote = "")
+icd10 <- read.table("../data/ORDR_ICD10_FULL.txt", sep = "\t", quote = "")
+
+# name of disease
+names(snomed)[3] <- "disease"
+names(icd9)[3] <- "disease"
+names(icd10)[3] <- "disease"
+
+# code number
+names(snomed)[4] <- "codeSnomed"
+names(icd9)[4] <- "codeICD9"
+names(icd10)[4] <- "codeICD10"
+
+# description of illness
+names(snomed)[5] <- "descSnomed"
+names(icd9)[5] <- "descICD9"
+names(icd10)[5] <- "descICD10"
+
+
+# first two columns are nonsense
+snomed <- dplyr::select(snomed, -c(1,2))
+icd9 <- dplyr::select(icd9, -c(1,2))
+icd10 <- dplyr::select(icd10, -c(1,2))
+
+#Joining the datasets 
+joinBy <- "disease"
+icd9combine <- inner_join(snomed, icd9, by = joinBy)
+icd10combine <- inner_join(snomed, icd10, by = joinBy)
+
+# Translates an ICD9 code to a Snomed Code 
+# Returns null if code not there
+icd9Translate <- function(icd9Code){
+  return(icd9combine[icd9combine$codeICD9 == icd9Code,]$codeSnomed)
+}
+
+# Translates an ICD10 code to a Snomed Code
+# Returns null if code not there
+icd10Translate <- function(icd10Code){
+  return(icd10combine[icd10combine$codeICD10 == icd10Code,]$codeSnomed)
+}
+
+diseases <- read.table("../data/ORDR_FULL_LIST.txt", sep = "\t", quote = "")
+
+# Recreating Paper Checks
+
+# Function which takes in a string and manipulates it, making it easier to match
+# Currently: to lowercase, replaces all non alpha numeric and takes away spaces
+# Used below as in CHECKING THE PERCENT COVERAGE
+formatForMatch <- function(stringInput){
+  string <- stringInput
+  string <- tolower(string)
+  string <- str_replace_all(string, "[^[:alnum:]]", " ")
+  string <- gsub(" ", "", string)
+  return(string)
+}
+
+# CHECKING THE PERCENT COVERAGE
+
+# format all the data frames so that they can be matched
+snomed$match <- formatForMatch(snomed$disease)
+icd9$match <- formatForMatch(icd9$disease)
+icd10$match <- formatForMatch(icd10$disease)
+diseases$match <- formatForMatch(diseases$V3)
+
+# initialize counts of matched diseases between tables
+diseaseFoundSnomed <- 0
+diseaseFoundICD9 <- 0
+diseaseFoundICD10 <- 0
+
+# Outer for loop checks every type of unique disease (based on disease ID)
+for(i in unique(diseases$V1)){
+  # subsets a new data frame which contains all the names of the disease
+  diseaseNames <- diseases[diseases$V1 == i,]
+  
+  # snomed check
+  for(j in 1:nrow(diseaseNames)){
+    if(diseaseNames$match[j] %in% snomed$match){
+      diseaseFoundSnomed <- diseaseFoundSnomed + 1
+      break
+    }
+  }
+  
+  # icd9 check
+  for(i in 1:nrow(diseaseNames)){
+    if(diseaseNames$match[i] %in% icd9$match){
+      diseaseFoundICD9 <- diseaseFoundICD9 + 1
+      break
+    }
+  }
+  
+  # icd10 check
+  for(i in 1:nrow(diseaseNames)){
+    if(diseaseNames$match[i] %in% icd10$match){
+      diseaseFoundICD10 <- diseaseFoundICD10 + 1
+      break
+    }
+  }
+  
+  # Calculate percents which is the results of this test
+  percentSnomed <- diseaseFoundSnomed / length(unique(diseases$V1))
+  percentICD9 <- diseaseFoundICD9 / length(unique(diseases$V1))
+  percentICD10 <- diseaseFoundICD10 / length(unique(diseases$V1))
+}
+
+#CHECKING THE COUNTS FOR CODES 
+snomedCodeOccur <- data.frame(table(snomed$codeSnomed))
+icd9CodeOccur <- data.frame(table(icd9$codeICD9))
+icd10CodeOccur <- data.frame(table(icd10$codeICD10))
+
+#Creating another frequency column that cuts off after 5 and just had 1-5 and >5 like the paper
+snomedCodeOccur$Freq2 <-snomedCodeOccur$Freq
+snomedCodeOccur$Freq2 <- as.character(snomedCodeOccur$Freq2)
+snomedCodeOccur$Freq2[snomedCodeOccur$Freq > 5] <- "6+"
+snomedCodeOccur <- table(snomedCodeOccur$Freq2)
+
+icd9CodeOccur$Freq2 <-icd9CodeOccur$Freq
+icd9CodeOccur$Freq2 <- as.character(icd9CodeOccur$Freq2)
+icd9CodeOccur$Freq2[icd9CodeOccur$Freq > 5] <- "6+"
+icd9CodeOccur <- table(icd9CodeOccur$Freq2)
+
+icd10CodeOccur$Freq2 <-icd10CodeOccur$Freq
+icd10CodeOccur$Freq2 <- as.character(icd10CodeOccur$Freq2)
+icd10CodeOccur$Freq2[icd10CodeOccur$Freq > 5] <- "6+"
+icd10CodeOccur <- table(icd10CodeOccur$Freq2)
+
+codeOccur <- data.frame(snomedCodeOccur, icd9CodeOccur, icd10CodeOccur)
+codeOccur <- select(codeOccur, c(-3,-5))
+names(codeOccur) <- (c("Number of rare diseases matching", "Snomed", "ICD9", "ICD10"))
+
+
+```
+
+```{r}
+# Table 2 from the Richesson paper
+kable(codeOccur, caption = "")
+```
+
+
+
+

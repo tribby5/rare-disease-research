@@ -1,0 +1,182 @@
+---
+title: "Tables of Most Common Rare Metabolic Diseases"
+author: "Gary Koplik"
+output:
+  html_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F)
+```
+
+```{r, message = F, warning = F}
+
+# clear old code to confirm replicability
+rm(list = ls() )
+
+# load libraries
+library(ggplot2)
+library(dplyr)
+library(knitr)
+
+```
+
+
+### Methodology
+
+I started with the subset of patients that at one point were assigned an ICD-10 code of a rare disease (from the mappings).
+
+I then filtered these data to only keep the rows containing a rare disease ICD-10 code (remember, we have restructured the data such that there is only one ICD-10 code per row).
+
+I finally further filtered these data such that the combination of patient ID and ICD-10 code was unique / a primary key in this final data frame (for example, if a patient has cystic fibrosis with the specified ICD-10 code in a visit in October of 2012 and shows the same code in October of 2013, then one of these rows will be deleted). I did this to avoid double counting patients with respect to determining prevalence of rare diseases in this data set. *Note, we can go back later to look **only** at patients who are assigned a rare disease code more than once, which is likely a more robust indication of whether a patient has a rare disease vs possibly having a rare disease*.
+
+```{r, message = F, warning = F}
+
+#### data set up ####
+
+# load data sets
+
+# full size data sets
+load("../data/rarePatients.Rdata")
+rare <- rareData
+rm(rareData)
+```
+
+### Frequency Table with All ICD-10 Codes for Rare Diseases
+
+
+This table shows the frequency of all ICD-10 codes in our rare disease file (from the National Library of Medicine). I also include the ICD-10 code description as well as the name of the disease it maps to in our mapping file.
+
+```{r, fig.width = 10, warning = F, message = F, cache = T}
+
+# read in table
+icd10 <- read.table("../data/ORDR_ICD10_FULL.txt", sep = "\t", quote = "",
+                    stringsAsFactors = F, header = T)
+
+icd10 <- icd10 %>%
+  # only keep primary terms for disease name
+  filter(ORDR_TTY == "PT") %>%
+  dplyr::select("code" = ICD10CM_CODE,
+                "disease_num" = ï..ORDR_ID,
+                "disease_name" = ORDR_NAME,
+                "code_description" = ICD10NAME)
+
+# rename for compatibility with old code
+disease_codes <- icd10
+# disease_codes <- base::rbind(disease_codes_icd9, disease_codes_icd10)
+
+# keep only the rows with a rare icd code
+rare_people <- dplyr::filter(rare, rare$Code %in% disease_codes$code)
+
+# keep unique icd codes within each PAT_ID
+rare_people$unique <- !duplicated(data.frame(rare_people$Code,
+                                             rare_people$PAT_ID))
+
+rare_representation_unique <- dplyr::filter(rare_people,
+                                            unique == T)
+
+# from stackoverflow question 27422229
+
+# avoid duplicates of icd10 codes
+icd10_unique <- unique(icd10[c("code", "code_description")])
+icd10_unique <- icd10_unique %>% dplyr::rename("Code" = code)
+
+icd10 <- icd10 %>% dplyr::rename("Code" = code)
+rare_representation_unique_icd10 <- rare_representation_unique
+
+# get sorted frequencies
+tab <- data.frame(rev(sort(table(rare_representation_unique_icd10$Code))))
+tab <- tab %>%
+  dplyr::rename("Code" = Var1) %>%
+  left_join(icd10, by = "Code") %>%
+  dplyr::select("ICD-10 Code" = Code,
+                "Frequency" = Freq,
+                "Rare Disease Name" = disease_name,
+                "ICD Code Description" = code_description) %>%
+  # keep only metabolic diseases (E70 - E88)
+  filter(substr(`ICD-10 Code`, 1, 1) == "E") %>%
+  filter(as.numeric(substr(`ICD-10 Code`, 2, 3)) %in% c(70:88))
+```
+
+Number of ICD-10 Codes: **`r nrow(tab)`**
+
+Total Number of Patients: **`r sum(tab[2])`**
+
+```{r}
+
+kable(tab)
+
+```
+
+
+
+### Frequency Table of ICD-10 Codes that Each Only Map to Exactly 1 Rare Disease
+
+Here, I specifically looked at only ICD-10 codes that uniquely mapped to exactly one "rare" disease in our mapping files.
+
+
+```{r, fig.width = 10, message = F, warning = F, cache = T}
+
+# using the codes that map to 1 disease in each (9 and 10) data set only
+
+# create a list of rare diseases to use to subset out just rare diseases
+# specifically icd codes that map to only 1 rare disease
+
+# see ./code_uniqueness.R for more details
+
+
+load("../data/icd10_1to1.Rdata")
+icd10 <- icd10_1to1
+rm(icd10_1to1)
+
+# rename for compatibility with old code
+disease_codes <- icd10
+
+# keep only the rows with a rare icd code
+rare_people <- dplyr::filter(rare, rare$Code %in% disease_codes$code)
+
+# keep unique icd codes within each PAT_ID
+rare_people$unique <- !duplicated(data.frame(rare_people$Code,
+                                             rare_people$PAT_ID))
+
+rare_representation_unique <- dplyr::filter(rare_people,
+                                            unique == T)
+
+# rename code to Code for later stuff lining up
+icd10 <- icd10 %>% dplyr::rename("Code" = code)
+rare_representation_unique_icd10 <- rare_representation_unique %>%
+  # add in details of icd codes
+  left_join(icd10)
+
+
+tab <- data.frame(rev(sort(table(rare_representation_unique_icd10$Code))))
+tab <- tab %>%
+  dplyr::rename("Code" = Var1) %>%
+  left_join(icd10, by = "Code") %>%
+  dplyr::select("ICD-10 Code" = Code,
+                "Frequency" = Freq,
+                "Rare Disease Name" = disease_name,
+                "ICD Code Description" = code_description) %>%
+  # keep only metabolic diseases (E70 - E88)
+  filter(substr(`ICD-10 Code`, 1, 1) == "E") %>%
+  filter(as.numeric(substr(`ICD-10 Code`, 2, 3)) %in% c(70:88))
+
+
+```
+
+Number of ICD-10 Codes: **`r nrow(tab)`**
+
+Total Number of Patients: **`r sum(tab[2])`**
+
+
+```{r}
+kable(tab)
+
+```
+
+$\hspace{4ex} _\blacksquare$
+
+
+
+
